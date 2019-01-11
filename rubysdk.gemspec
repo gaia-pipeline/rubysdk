@@ -9,5 +9,6 @@ Gem::Specification.new do |s|
   s.homepage    = 'https://gaia-pipeline.io'
   s.files       = ["lib/rubysdk.rb", "lib/interface.rb", "lib/proto/plugin_pb.rb", "lib/proto/plugin_services_pb.rb"]
   s.add_runtime_dependency "grpc", ["~> 1.17"]
+  s.add_runtime_dependency "fnv", ["~> 0.2"]
   s.add_development_dependency "grpc-tools", ["~> 1.17"]
 end
