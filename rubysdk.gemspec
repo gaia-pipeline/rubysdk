@@ -1,6 +1,6 @@
 Gem::Specification.new do |s|
   s.name        = 'rubysdk'
-  s.version     = '0.0.1.pre1'
+  s.version     = '0.0.1.pre2'
   s.date        = '2019-01-08'
   s.licenses    = ['Apache-2.0']
   s.summary     = "Ruby SDK for Gaia pipelines (https://gaia-pipeline.io)."
