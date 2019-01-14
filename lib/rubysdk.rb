@@ -28,7 +28,7 @@ module RubySDK
         cjob = cached_job unless cached_job.unique_id == job.unique_id
       end
       if cjob == nil
-        JobResult.new(failed: true,
+        Proto::JobResult.new(failed: true,
                       exit_pipeline: true,
                       message: "job not found in plugin " + job.title)
         return
@@ -43,7 +43,7 @@ module RubySDK
       end
 
       # Execute job
-      job_result = JobResult.new
+      job_result = Proto::JobResult.new
       begin
         job.handler.call(args)
       rescue => e
@@ -61,9 +61,7 @@ module RubySDK
 
   # Serve caches the given jobs and starts the gRPC server.
   # This function should be last called in the plugin main function.
-  def Serve(jobs)
-    include Interface
-
+  def self.Serve(jobs)
     # Cache the jobs for later processing.
     # We have to transform given jobs into suitable proto models.
     cached_jobs = []
@@ -71,7 +69,7 @@ module RubySDK
       # Transform manual interaction
       manual_interaction = nil
       if job.interaction != nil
-        manual_interaction = ManualInteraction.new(description: job.interaction.desc,
+        manual_interaction = Interface::ManualInteraction.new(description: job.interaction.desc,
                                                    type: job.interaction.type,
                                                    value: job.interaction.value)
       end
@@ -114,19 +112,18 @@ module RubySDK
       end
 
       # Create wrapper object
-      wrapper_job = JobsWrapper.new(handler: job.handler,
-                                    job: proto_job)
+      wrapper_job = Interface::JobsWrapper.new(handler: job.handler, job: proto_job)
       cached_jobs.push wrapper_job
     end
 
     # Check if two jobs have the same title which is restricted.
-    #dup_map = {}
+    dup_map = {}
     cached_jobs.each do |job|
-      #dup_map[job.job.unique_id] = (map[job.job.unique_id] || 0) + 1
+      dup_map[job.job.unique_id] = (dup_map[job.job.unique_id] || 0) + 1
 
-      #if dup_map[job.job.unique_id] > 1
-      #  raise "duplicate job with the title #{job.title} found which is not allowed"
-      #end
+      if dup_map[job.job.unique_id] > 1
+        raise "duplicate job with the title #{job.title} found which is not allowed"
+      end
     end
 
     # Get certificates path from env variables.
@@ -134,14 +131,19 @@ module RubySDK
     key_path = ENV["GAIA_PLUGIN_KEY"]
     root_ca_path = ENV["GAIA_PLUGIN_CA_CERT"]
 
+    # Check if variable is empty.
+    raise "GAIA_PLUGIN_CERT not set" unless cert_path
+    raise "GAIA_PLUGIN_KEY not set" unless key_path
+    raise "GAIA_PLUGIN_CA_CERT not set" unless root_ca_path
+
     # Check if all certs are available.
     raise "cannot find path to certificate" unless File.file?(cert_path)
     raise "cannot find path to key" unless File.file?(key_path)
     raise "cannot find path to root CA certificate" unless File.file?(root_ca_path)
 
     # Implement health service.
-    #health_svc = GRPC::Health::Checker.new
-    #health_svc.add_status("plugin", GRPC::Core::StatusCodes::SERVING)
+    health_svc = GRPC::Grpc::Health::Checker.new
+    health_svc.add_status("plugin", GRPC::Core::StatusCodes::SERVING)
 
     # Load certificates and create credentials.
     credentials = GRPC::Core::ServerCredentials.new(
