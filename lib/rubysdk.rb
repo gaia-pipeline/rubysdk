@@ -5,6 +5,7 @@ $LOAD_PATH.unshift(proto_dir) unless $LOAD_PATH.include?(proto_dir)
 $LOAD_PATH.unshift(interface_dir) unless $LOAD_PATH.include?(interface_dir)
 
 require 'grpc'
+require 'grpc/health/checker'
 require 'fnv'
 require 'plugin_services_pb'
 require 'interface'
@@ -16,13 +17,15 @@ module RubySDK
       @cached_jobs = cached_jobs
     end
 
-    # GetJobs returns all registered jobs.
-    def GetJobs(empty)
-      @cached_jobs.each { |job| yield job.job }
+    # get_jobs returns all registered jobs.
+    def get_jobs(empty, _call)
+      jobs = []
+      @cached_jobs.each { |job| jobs.push job.job }
+      jobs.each
     end
 
-    # ExecuteJob executes the given job and returns a result.
-    def ExecuteJob(job)
+    # execute_job executes the given job and returns a result.
+    def execute_job(job, _call)
       cjob = nil
       @cached_jobs.each do |cached_job|
         cjob = cached_job unless cached_job.unique_id == job.unique_id
@@ -142,8 +145,8 @@ module RubySDK
     raise "cannot find path to root CA certificate" unless File.file?(root_ca_path)
 
     # Implement health service.
-    health_svc = GRPC::Grpc::Health::Checker.new
-    health_svc.add_status("plugin", GRPC::Core::StatusCodes::SERVING)
+    health_svc = Grpc::Health::Checker.new
+    health_svc.add_status("plugin", Grpc::Health::V1::HealthCheckResponse::ServingStatus::SERVING)
 
     # Load certificates and create credentials.
     credentials = GRPC::Core::ServerCredentials.new(
@@ -156,14 +159,15 @@ module RubySDK
     )
 
     # Register gRPC server and handle.
-    host = 'localhost'
+    host = '127.0.0.1'
     s = GRPC::RpcServer.new
     port = s.add_http2_port(host+':0', credentials)
     s.handle(GRPCServer.new(cached_jobs))
+    s.handle(health_svc)
 
     # Output the address and service name to stdout.
     # hashicorp go-plugin will use that to establish a connection.
-    puts "1|2|tcp|#{host}:#{port}|grpc"
+    STDOUT.puts "1|2|tcp|#{host}:#{port}|grpc"
     STDOUT.sync = true
 
     s.run_till_terminated
