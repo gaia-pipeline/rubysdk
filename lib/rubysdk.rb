@@ -3,6 +3,7 @@ proto_dir = File.join(this_dir, 'proto')
 interface_dir = File.join(this_dir, 'interface')
 $LOAD_PATH.unshift(proto_dir) unless $LOAD_PATH.include?(proto_dir)
 $LOAD_PATH.unshift(interface_dir) unless $LOAD_PATH.include?(interface_dir)
+STDOUT.sync = true
 
 require 'grpc'
 require 'grpc/health/checker'
@@ -28,7 +29,7 @@ module RubySDK
     def execute_job(job, _call)
       cjob = nil
       @cached_jobs.each do |cached_job|
-        cjob = cached_job unless cached_job.unique_id == job.unique_id
+        cjob = cached_job if cached_job.job.unique_id == job.unique_id
       end
       if cjob == nil
         Proto::JobResult.new(failed: true,
@@ -39,26 +40,35 @@ module RubySDK
 
       # Transform arguments
       args = []
-      job.args.each do |arg|
-        new_arg = Proto::Argument.new(key: arg.key,
+      if !job.args.empty?
+        job.args.each do |arg|
+          new_arg = Proto::Argument.new(key: arg.key,
                                value: arg.value)
-        args.push new_arg
+          args.push new_arg
+        end
       end
 
       # Execute job
-      job_result = Proto::JobResult.new
+      job_failed = false
+      exit_pipeline = false
+      message = ""
+      unique_id = 0
       begin
-        job.handler.call(args)
+        cjob.handler.call(args)
       rescue => e
         # Check if job wants to force exit pipeline.
         # We will exit the pipeline but not mark it as 'failed'.
-        job_result.failed = true unless e == ErrorExitPipeline
+        job_failed = true if e == ErrorExitPipeline
 
         # Set log message and job id
-        job_result.exit_pipeline = true
-        job_result.message = e.message
-        job_result.unique_id = job.job.unique_id
+        exit_pipeline = true
+        message = e.message
+        unique_id = job.job.unique_id
       end
+      Proto::JobResult.new(unique_id: unique_id,
+                           failed: job_failed,
+                           exit_pipeline: exit_pipeline,
+                           message: message)
     end
   end
 
@@ -81,6 +91,11 @@ module RubySDK
       args = []
       if job.args != nil
         job.args.each do |arg|
+          # Description and Value are optional.
+          # Set default values for those.
+          arg.desc = "" if arg.desc == nil
+          arg.value = "" if arg.value == nil
+            
           trans_arg = Proto::Argument.new(description: arg.desc,
                                           type: arg.type,
                                           key: arg.key,
@@ -104,7 +119,7 @@ module RubySDK
           dep_found = false
           jobs.each do |curr_job|
             if curr_job.title.casecmp(dep_job) == 0
-              proto_job.dependson += FNV.new.fnv1a_32(curr_job.title)
+              proto_job.dependson.push FNV.new.fnv1a_32(curr_job.title)
               dep_found = true
               break
             end
@@ -168,7 +183,6 @@ module RubySDK
     # Output the address and service name to stdout.
     # hashicorp go-plugin will use that to establish a connection.
     STDOUT.puts "1|2|tcp|#{host}:#{port}|grpc"
-    STDOUT.sync = true
 
     s.run_till_terminated
   end

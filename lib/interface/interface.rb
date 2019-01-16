@@ -1,6 +1,12 @@
 #!/usr/bin/env ruby
 
 module Interface
+  # Constants
+  TextFieldInput = "textfield"
+  TextAreaInput  = "textarea"
+  BoolInput      = "boolean"
+  VaultInput     = "vault"
+
   class Job
     attr_accessor :handler, :title, :desc, :dependson, :args, :interaction
     
